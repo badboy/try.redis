@@ -68,7 +68,7 @@ class TryRedis < Sinatra::Base
     rescue Exception => e
       STDERR.puts e.message
       e.backtrace.each {|bt| STDERR.puts bt}
-      { "error" => e.message }
+      { "error" => "(error) #{e.message}" }
     end
   end
 
@@ -93,6 +93,18 @@ class TryRedis < Sinatra::Base
     else
       # Send the command to Redis.
       result = redis.send(*argv)
+
+      if INTEGER_COMMANDS.include?(argv[0])
+        result = "(integer) #{result}"
+      else
+        if FLATTEN_COMMANDS.include?(argv[0])
+          result = result.flatten
+        end
+
+        result = to_redis_output result
+      end
+
+      result
     end
   ensure
     begin

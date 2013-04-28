@@ -19,7 +19,7 @@ function submitCommand(text, dontClearInput) {
       session_id = data.session_id
     }
     if (data.response !== undefined) {
-      append(JSON.stringify(data.response), "response");
+      append(data.response, "response");
     } else if (data.error !== undefined) {
       append(data.error, "error", "", true);
     } else if (data.notification !== undefined) {

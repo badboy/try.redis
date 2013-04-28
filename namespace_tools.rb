@@ -14,9 +14,22 @@ module NamespaceTools
     zrangebyscore zrem zremrangebyscore zrevrange zscore
   ]
 
+  # These are manually converted to integer output
+  INTEGER_COMMANDS = %w[
+    incr incrby decr decrby del ttl llen
+    sadd zadd
+    zremrangebyrank
+    hincrby
+    lpush rpush lpushx rpushx lrem
+  ]
+
+  # These commands return a nested array in ruby, need to be flattened
+  FLATTEN_COMMANDS = %w[
+    zrange zrevrange zrangebyscore zinterstore zunionstore
+  ]
+
   def namespace_input(ns, command, *args)
     command = command.to_s.downcase
-
 
     if ALLOWED_COMMANDS.include?(command)
       case command
@@ -94,4 +107,46 @@ module NamespaceTools
     end
   end
 
+  # Transform redis response from ruby to redis-cli like format
+  def to_redis_output input
+    case input
+    when nil
+      '(nil)'
+    when 'OK'
+      'OK'
+    when true
+      '(integer) 1'
+    when false
+      '(integer) 0'
+    when Array
+      if input.empty?
+        "(empty list or set)"
+      else
+        str = ""
+        size = input.size.to_s.size
+        input.each_with_index do |v, i|
+          str << "#{(i+1).to_s.rjust(size)}) #{to_redis_output v}\n"
+        end
+        str
+      end
+    when Hash
+      if input.empty?
+        "(empty list or set)"
+      else
+        str = ""
+        size = input.size.to_s.size
+        i = 0
+        input.each do |(k, v)|
+          str << "#{(i+1).to_s.rjust(size)}) #{to_redis_output k}\n"
+          str << "#{(i+2).to_s.rjust(size)}) #{to_redis_output v}\n"
+          i += 2
+        end
+        str
+      end
+    when String, Numeric
+      "\"#{input}\""
+    else
+      input
+    end
+  end
 end
