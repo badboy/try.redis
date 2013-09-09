@@ -4,10 +4,12 @@ used to sort the elements in the set.
 
 <pre></code>
     <a href="#run">ZADD hackers 1940 "Alan Kay"</a>
+    <a href="#run">ZADD hackers 1906 "Grace Hopper"</a>
     <a href="#run">ZADD hackers 1953 "Richard Stallman"</a>
     <a href="#run">ZADD hackers 1965 "Yukihiro Matsumoto"</a>
     <a href="#run">ZADD hackers 1916 "Claude Shannon"</a>
     <a href="#run">ZADD hackers 1969 "Linus Torvalds"</a>
+    <a href="#run">ZADD hackers 1957 "Sophie Wilson"</a>
     <a href="#run">ZADD hackers 1912 "Alan Turing"</a>
 </code></pre>
 
@@ -15,5 +17,5 @@ In these examples, the scores are years of birth and the values are the names
 of famous hackers.
 
 <pre></code>
-    <a href="#run">ZRANGE hackers 2 4</a> => ["Alan Kay","Richard Stallman","Yukihiro Matsumoto"]
+    <a href="#run">ZRANGE hackers 2 4</a> => ["Claude Shannon", "Alan Kay","Richard Stallman"]
 </code></pre>

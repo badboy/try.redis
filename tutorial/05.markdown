@@ -7,7 +7,7 @@ a list, as long as it doesn't already exist as a different type.
 [RPUSH](#help) puts the new value at the end of the list.
 
 <pre><code>
-    <a href="#run">RPUSH friends "Tom"</a>
+    <a href="#run">RPUSH friends "Alice"</a>
     <a href="#run">RPUSH friends "Bob"</a>
 </code></pre>
 
@@ -23,7 +23,7 @@ you want to retrieve as its second parameter. A value of -1 for the second
 parameter means to retrieve all elements in the list.
 
 <pre><code>
-    <a href="#run">LRANGE friends 0 -1</a> => ["Sam","Tom","Bob"]
-    <a href="#run">LRANGE friends 0 1</a> => ["Sam","Tom"]
-    <a href="#run">LRANGE friends 1 2</a> => ["Tom","Bob"]
+    <a href="#run">LRANGE friends 0 -1</a> => ["Sam","Alice","Bob"]
+    <a href="#run">LRANGE friends 0 1</a> => ["Sam","Alice"]
+    <a href="#run">LRANGE friends 1 2</a> => ["Alice","Bob"]
 </code></pre>
