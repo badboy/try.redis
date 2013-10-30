@@ -15,6 +15,7 @@ module NamespaceTools
     sdiffstore set setnx sinter sinterstore sismember smembers smove sort spop
     srandmember srem sunion sunionstore ttl type zadd zcard zincrby zrange
     zrangebyscore zrem zremrangebyscore zrevrange zscore
+    scan
   ]
 
   # These are manually converted to integer output
@@ -47,7 +48,7 @@ module NamespaceTools
       when "zadd", "sadd", "zrem", "srem"
         return [ command, args.shift, args ]
       when "sort"
-        return [] if args.empty?
+        return ARGUMENT_ERROR[command] if args.empty?
 
         key    = args.shift
         params = {}
@@ -67,6 +68,19 @@ module NamespaceTools
         end
 
         return [ command, key, params ]
+      when "scan"
+        return ARGUMENT_ERROR[command] if args.empty?
+
+        cursor, params = extract_scan_arguments(ns, args)
+
+        return [ command, cursor, params ]
+      when "hscan", "sscan", "zscan"
+        return ARGUMENT_ERROR[command] if args.size < 2
+
+        key = args.shift
+        cursor, params = extract_scan_arguments(ns, args)
+
+        return [ command, key, cursor, params ]
       when "zrange", "zrevrange"
         # Only the first argument is a key, but special argument at the end.
 
@@ -103,6 +117,24 @@ module NamespaceTools
 
       [command, *args]
     end
+  end
+
+  def extract_scan_arguments ns, args
+    cursor = args.shift
+    params = {}
+
+    while keyword = args.shift
+      case keyword.downcase
+      when "match"
+        params[:match] = "#{ns}:#{args.shift}"
+      when "count"
+        params[:count] = args.shift
+      end
+    end
+
+    params[:match] ||= "#{ns}:*"
+
+    [cursor, params]
   end
 
   def add_namespace(namespace, key)
