@@ -24,8 +24,8 @@ class TestNamespaceTools < Minitest::Test
 
   def test_parse_command_correct
     to_test = [
-      [ ['set', 'foo', 'bar'], ['set', 'foo', 'bar'] ],
-      [ ['keys', '*'],         ['keys', '*'] ],
+      [ ['set', 'ns:foo', 'bar'], ['set', 'foo', 'bar'] ],
+      [ ['get', 'ns:foo'],        ['get', 'foo' ] ],
     ]
 
     to_test.each do |exp, cmd|
@@ -35,8 +35,8 @@ class TestNamespaceTools < Minitest::Test
 
   def test_parse_command_incorrect
     to_test = [
-      [ {error: "ERR wrong number of arguments for 'keys' command"}, ['keys'] ],
-      [ {error: "ERR wrong number of arguments for 'keys' command"}, ['keys', 'one', 'two'] ]
+      [ {error: "ERR wrong number of arguments for 'set' command"}, ['set'] ],
+      [ {error: "ERR wrong number of arguments for 'get' command"}, ['get'] ]
     ]
 
     to_test.each do |exp, cmd|
@@ -79,15 +79,13 @@ class TestNamespaceTools < Minitest::Test
 
   def test_parse_extended_set
     to_test = [
-      [ ['set', 'foo', 'bar', {:ex => '1000'}], ['set', 'foo', 'bar', 'ex', '1000'] ],
-      [ ['set', 'foo', 'bar', {:px => '1000'}], ['set', 'foo', 'bar', 'px', '1000'] ],
-      [ ['set', 'foo', 'bar', {:nx => true}], ['set', 'foo', 'bar', 'nx'] ],
-      [ ['set', 'foo', 'bar', {:xx => true}], ['set', 'foo', 'bar', 'xx'] ],
-      [ ['set', 'foo', 'bar', {:ex => '1000', :xx => true}], ['set', 'foo', 'bar', 'xx', 'ex', '1000'] ],
-      [ ['set', 'foo', 'bar', {:px => '1000', :nx => true}], ['set', 'foo', 'bar', 'px', '1000', 'nx'] ],
-      [ ['set', 'foo', 'bar', {:px => '1000', :nx => true}], ['set', 'foo', 'bar', 'px', '1000', 'nx'] ],
-      [ {error: "ERR Syntax error"}, ['set', 'foo', 'bar', 'px'] ],
-      [ {error: "ERR Syntax error"}, ['set', 'foo', 'bar', 'ex'] ],
+      [ ['set', 'ns:foo', 'bar', 'ex', '1000'], ['set', 'foo', 'bar', 'ex', '1000'] ],
+      [ ['set', 'ns:foo', 'bar', 'px', '1000'], ['set', 'foo', 'bar', 'px', '1000'] ],
+      [ ['set', 'ns:foo', 'bar', 'nx'], ['set', 'foo', 'bar', 'nx'] ],
+      [ ['set', 'ns:foo', 'bar', 'xx'], ['set', 'foo', 'bar', 'xx'] ],
+      [ ['set', 'ns:foo', 'bar', 'xx', 'ex', '1000'], ['set', 'foo', 'bar', 'xx', 'ex', '1000'] ],
+      [ ['set', 'ns:foo', 'bar', 'px', '1000', 'nx'], ['set', 'foo', 'bar', 'px', '1000', 'nx'] ],
+      [ ['set', 'ns:foo', 'bar', 'px', '1000', 'nx'], ['set', 'foo', 'bar', 'px', '1000', 'nx'] ],
     ]
 
     to_test.each do |exp, cmd|
@@ -97,13 +95,13 @@ class TestNamespaceTools < Minitest::Test
 
   def test_parse_scan_family
     to_test = [
-      [ ['scan', '0', {:match => 'ns:*'}], ['scan', '0'] ],
-      [ ['scan', '0', {:match => 'ns:foo*'}], ['scan', '0', 'match', 'foo*'] ],
-      [ ['hscan', 'ns:key', '0', {}], ['hscan', 'key', '0'] ],
-      [ ['sscan', 'ns:key', '0', {}], ['sscan', 'key', '0'] ],
-      [ ['zscan', 'ns:key', '0', {}], ['zscan', 'key', '0'] ],
-      [ ['zscan', 'ns:key', '0', {:match => 'foo'}], ['zscan', 'key', '0', 'match', 'foo'] ],
-      [ ['zscan', 'ns:key', '0', {:count => '5'}], ['zscan', 'key', '0', 'count', '5'] ],
+      [ ['scan', '0', 'match', 'ns:*'], ['scan', '0'] ],
+      [ ['scan', '0', 'match', 'ns:foo*'], ['scan', '0', 'match', 'foo*'] ],
+      [ ['hscan', 'ns:key', '0'], ['hscan', 'key', '0'] ],
+      [ ['sscan', 'ns:key', '0'], ['sscan', 'key', '0'] ],
+      [ ['zscan', 'ns:key', '0'], ['zscan', 'key', '0'] ],
+      [ ['zscan', 'ns:key', '0', 'match', 'foo'], ['zscan', 'key', '0', 'match', 'foo'] ],
+      [ ['zscan', 'ns:key', '0', 'count', '5'], ['zscan', 'key', '0', 'count', '5'] ],
     ]
 
     to_test.each do |exp, cmd|

@@ -1,205 +1,54 @@
 # encoding: utf-8
 
 require_relative 'lib/shell_escape'
+require_relative 'lib/redis_commands'
 
 module NamespaceTools
-  SYNTAX_ERROR = {error: "ERR Syntax error"}.freeze
-  ARGUMENT_ERROR = -> cmd { {error: "ERR wrong number of arguments for '#{cmd}' command"} }
+   SYNTAX_ERROR = {error: "ERR Syntax error"}.freeze
+   ARGUMENT_ERROR = -> cmd { {error: "ERR wrong number of arguments for '#{cmd}' command" } }
 
-  ALLOWED_COMMANDS = %w[
-    append echo getrange hmget hsetnx incrbyfloat
-    hincrbyfloat decr decrby del discard exec linsert lpushx persist pexpire
-    pexpireat ping pttl psetex rpushx setex setrange strlen time zcount
-    zrank zremrangebyrank zrevrangebyscore zrevrank exists expire expireat get
-    getset hdel hexists hget hgetall hincrby hkeys hlen hmset hset hvals incr
-    incrby info keys lindex llen lpop lpush lrange lrem lset ltrim mget mset
-    msetnx multi rename renamenx rpop rpoplpush rpush sadd scard sdiff
-    sdiffstore set setnx sinter sinterstore sismember smembers smove sort spop
-    srandmember srem sunion sunionstore ttl type zadd zcard zincrby zrange
-    zrangebyscore zrem zremrangebyscore zrevrange zscore
-    scan sscan hscan zscan
-    bitcount bitop getbit setbit bitpos
-    pfadd pfcount pfmerge
-  ]
+   SPECIAL_HANDLING = {
+     'keys' => { error: "KEYS is an expensive command. It needs to go through the whole database. Its use is not recommended (and thus disabled in try.redis)." }
+   }
 
-  # These are manually converted to integer output
-  INTEGER_COMMANDS = %w[
-    incr incrby decr decrby del ttl llen
-    sadd zadd
-    zremrangebyrank
-    hincrby hdel
-    lpush rpush lpushx rpushx lrem
-    bitpos
-    strlen
-    pfadd pfcount
-  ]
+  def parse_command namespace, cmd, *args
+    cmd = cmd.downcase
 
-  # These commands return a nested array in ruby, need to be flattened
-  FLATTEN_COMMANDS = %w[
-    zrange zrevrange zrangebyscore zinterstore zunionstore
-  ]
-
-  def parse_command(ns, command, *args)
-    command = command.to_s.downcase
-
-    if ALLOWED_COMMANDS.include?(command)
-      case command
-      when "keys"
-        if args.size != 1
-          return ARGUMENT_ERROR[command]
-        end
-      when "bitpos"
-        if args.size < 2
-          return ARGUMENT_ERROR[command]
-        end
-
-        # Manually namespace this, redis-namespace does not know it.
-        args[0] = add_namespace(ns, args[0])
-        return [ command, *args ]
-      when "pfadd", "pfcount"
-        if args.size < 1
-          return ARGUMENT_ERROR[command]
-        end
-
-        # Manually namespace this, redis-namespace does not know it.
-        args[0] = add_namespace(ns, args[0])
-        return [ command, *args ]
-      when "pfmerge"
-        if args.size < 2
-          return ARGUMENT_ERROR[command]
-        end
-        # Manually namespace this, redis-namespace does not know it.
-        args.map! { |arg|
-          add_namespace(ns, arg)
-        }
-        return [ command, *args ]
-      when "zadd", "sadd", "zrem", "srem"
-        return [ command, args.shift, args ]
-      when "sort"
-        return ARGUMENT_ERROR[command] if args.empty?
-
-        key    = args.shift
-        params = {}
-
-        while keyword = args.shift
-          case keyword.downcase
-          when "by", "get", "store"
-            k = keyword.intern
-            params[k] = args.shift
-          when "limit"
-            params[:limit] = [ args.shift.to_i, args.shift.to_i ]
-          when "asc", "desc", "alpha"
-            params[:order] ||= ""
-            params[:order] << " "
-            params[:order] << keyword
-          end
-        end
-
-        return [ command, key, params ]
-      when "scan"
-        return ARGUMENT_ERROR[command] if args.empty?
-
-        cursor, params = extract_scan_arguments(ns, args)
-
-        return [ command, cursor, params ]
-      when "hscan", "sscan", "zscan"
-        return ARGUMENT_ERROR[command] if args.size < 2
-
-        # Explicit namespacing here as redis-namespace fails to do the proper thing
-        key = add_namespace(ns, args.shift)
-        cursor, params = extract_scan_arguments(nil, args)
-
-        return [ command, key, cursor, params ]
-      when "zrange", "zrevrange"
-        # Only the first argument is a key, but special argument at the end.
-
-        head = args.first
-        tail = args[1..-1] || []
-        options = {}
-
-        if tail.last && tail.last.downcase == "withscores"
-          tail.pop
-          options[:withscores] = true
-        end
-
-        return [ command, head, *tail, options ]
-      when "zrangebyscore"
-        # Only the first argument is a key, but special arguments at the end.
-
-        head = args.shift
-
-        tail = [args.shift, args.shift]
-        options = {}
-        while keyword = args.shift
-          case keyword.downcase
-          when "limit"
-            options[:limit] = [ args.shift.to_i, args.shift.to_i ]
-          when "withscores"
-            options[:withscores] = true
-          else
-            return SYNTAX_ERROR
-          end
-        end
-
-        return [ command, head, *tail, options ]
-      when "set"
-        head = args.shift
-
-        tail = [args.shift]
-        options = {}
-        while keyword = args.shift
-          case keyword.downcase
-          when "ex"
-            options[:ex] = args.shift
-            return SYNTAX_ERROR unless options[:ex]
-          when "px"
-            options[:px] = args.shift
-            return SYNTAX_ERROR unless options[:px]
-          when "nx"
-            options[:nx] = true
-          when "xx"
-            options[:xx] = true
-          else
-            return SYNTAX_ERROR
-          end
-        end
-
-        if options.empty?
-          return [ command, head, *tail ]
-        else
-          return [ command, head, *tail, options ]
-        end
-      end
-
-      [command, *args]
+    # Special error message for keys
+    if (msg=SPECIAL_HANDLING[cmd])
+      return msg
     end
+
+    command = ALL_COMMANDS[cmd.downcase]
+    return nil unless command
+
+    unless command.check_arity *args
+      return ARGUMENT_ERROR[cmd]
+    end
+
+    keys = command.get_key_positions args
+    keys.each { |i| args[i] and args[i] = "#{namespace}:#{args[i]}" }
+
+    args = special_case_scan(namespace, args) if cmd == "scan"
+
+    [cmd, *args]
   end
 
-  def extract_scan_arguments ns, args
-    cursor = args.shift
-    params = {}
-
-    while keyword = args.shift
-      case keyword.downcase
-      when "match"
-        params[:match] = add_namespace(ns, args.shift)
-      when "count"
-        params[:count] = args.shift
+  def special_case_scan namespace, args
+    i = 0
+    found = false
+    while i < args.size
+      if args[i].downcase == "match"
+        found = true
+        args[i+1] = "#{namespace}:#{args[i+1]}"
+        i += 2
+        next
       end
+      i += 1
     end
 
-    params[:match] ||= "#{ns}:*" if ns
-
-    [cursor, params]
-  end
-
-  def add_namespace(namespace, key)
-    return key unless namespace
-
-    case key
-    when String then "#{namespace}:#{key}"
-    when Array  then key.map {|k| add_namespace(namespace, k)}
-    end
+    args << "match" << "#{namespace}:*" unless found
+    args
   end
 
   # Transform redis response from ruby to redis-cli like format
@@ -215,12 +64,7 @@ module NamespaceTools
     end
 
     if cmd == 'ping' && input == 'PONG'
-      return "PONG"
-    end
-
-    # Atleast hscan and zscan return nested arrays here.
-    if ['scan', 'hscan', 'zscan', 'sscan'].include?(cmd)
-      input[1].flatten!
+      return 'PONG'
     end
 
     case input
@@ -228,40 +72,16 @@ module NamespaceTools
       '(nil)'
     when 'OK'
       'OK'
-    when true
-      if cmd == 'set'
-        return 'OK'
-      else
-        '(integer) 1'
-      end
-    when false
-      if cmd == 'set'
-        return '(nil)'
-      else
-        '(integer) 0'
-      end
+    when Integer
+      "(integer) #{input}"
     when Array
       if input.empty?
-        "(empty list or set)"
+        '(empty list or set)'
       else
         str = ""
         size = input.size.to_s.size
         input.each_with_index do |v, i|
           str << "#{(i+1).to_s.rjust(size)}) #{to_redis_output v}\n"
-        end
-        str
-      end
-    when Hash
-      if input.empty?
-        "(empty list or set)"
-      else
-        str = ""
-        size = input.size.to_s.size
-        i = 0
-        input.each do |(k, v)|
-          str << "#{(i+1).to_s.rjust(size)}) #{to_redis_output k}\n"
-          str << "#{(i+2).to_s.rjust(size)}) #{to_redis_output v}\n"
-          i += 2
         end
         str
       end
@@ -272,74 +92,8 @@ module NamespaceTools
     end
   end
 
-  INFO_SECTIONS = [
-    ["Server", [ "redis_version", "redis_git_sha1", "redis_git_dirty",
-                 "redis_build_id", "redis_mode", "os", "arch_bits",
-                 "multiplexing_api", "gcc_version", "process_id", "run_id",
-                 "tcp_port", "uptime_in_seconds", "uptime_in_days", "hz",
-                 "lru_clock" ]
-    ],
-    ["Clients", [ "connected_clients", "client_longest_output_list",
-                  "client_biggest_input_buf", "blocked_clients" ] ],
-    ["Memory", [ "used_memory", "used_memory_human", "used_memory_rss",
-                 "used_memory_peak", "used_memory_peak_human",
-                 "used_memory_lua", "mem_fragmentation_ratio", "mem_allocator"
-               ]
-    ],
-    ["Persistence", [ "loading", "rdb_changes_since_last_save",
-                      "rdb_bgsave_in_progress", "rdb_last_save_time",
-                      "rdb_last_bgsave_status", "rdb_last_bgsave_time_sec",
-                      "rdb_current_bgsave_time_sec", "aof_enabled",
-                      "aof_rewrite_in_progress", "aof_rewrite_scheduled",
-                      "aof_last_rewrite_time_sec",
-                      "aof_current_rewrite_time_sec", "aof_last_bgrewrite_status"
-                    ]
-    ],
-    ["Stats", [ "total_connections_received", "total_commands_processed",
-                "instantaneous_ops_per_sec", "rejected_connections",
-                "sync_full", "sync_partial_ok", "sync_partial_err",
-                "expired_keys", "evicted_keys", "keyspace_hits",
-                "keyspace_misses", "pubsub_channels", "pubsub_patterns",
-                "latest_fork_usec", "migrate_cached_sockets" ]
-    ],
-    ["Replication", [ "role", "connected_slaves", "master_repl_offset",
-                      "repl_backlog_active", "repl_backlog_size",
-                      "repl_backlog_first_byte_offset", "repl_backlog_histlen"
-                    ]
-    ],
-    ["CPU", [ "used_cpu_sys", "used_cpu_user", "used_cpu_sys_children",
-              "used_cpu_user_children" ]
-    ],
-    ["Cluster", [ "cluster_enabled" ] ],
-    ["Keyspace", ["db0"] ]
-  ]
   def info_output input, section=nil
-    msg = ""
-
-    # Show only data for subsection
-    if section
-      section_data = INFO_SECTIONS.find{|k,_| k.downcase == section }
-      if section_data
-        msg << "# #{section_data[0]}\n"
-        section_data[1].each do |opt|
-          msg << "#{opt}:#{input[opt]}\n" if input[opt]
-        end
-        msg << "\n"
-      else
-        msg = "\n\n"
-      end
-
-      return msg.chomp
-    end
-
-    INFO_SECTIONS.each do |section|
-      msg << "# #{section[0]}\n"
-      section[1].each do |opt|
-        msg << "#{opt}:#{input[opt]}\n" if input[opt]
-      end
-      msg << "\n"
-    end
-    msg.chomp
+    return input.tr("\r", '')
   end
 
   class ThrottledCommand < Exception; end

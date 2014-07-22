@@ -34,4 +34,3 @@ since: #{since}<br>
 end
 
 puts docu.to_json
-#ap docu

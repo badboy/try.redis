@@ -47,9 +47,20 @@ Rake::TestTask.new do |t|
 end
 
 GROUPED_HELP_FILE = "redis-doc/grouped_help.json"
+COMMAND_LIST_FILE = "lib/redis_commands.rb"
 HELP_FILE         = "~/code/redis/src/help.h"
 
-desc "Generate grouped help file"
-task :generate_help do
-  sh "./utils/parse_help_groups.rb #{HELP_FILE} > #{GROUPED_HELP_FILE}"
+namespace :generate do
+  desc "Generate grouped help file"
+  task :help do
+    sh "./utils/parse_help_groups.rb #{HELP_FILE} | json > #{GROUPED_HELP_FILE}"
+  end
+
+  desc "Generate command list"
+  task :command do
+    sh "./utils/parse_commands.rb dump > #{COMMAND_LIST_FILE}"
+  end
+
+  desc "Generate all helper files"
+  task :all => ['generate:help', 'generate:command']
 end

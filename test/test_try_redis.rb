@@ -8,8 +8,8 @@ class TestTryRedis < MiniTest::Test
   def setup
     port = ENV['REDIS_PORT'] || 6379
     host = ENV['REDIS_HOST'] || 'localhost'
-    @r = Redis.new host: host, port: port
-    @r.flushall
+    @r = Redic.new "redis://#{host}:#{port}"
+    @r.call :flushall
   end
 
   def app
@@ -23,10 +23,15 @@ class TestTryRedis < MiniTest::Test
   # Helper commands
   def command arg, session_id=nil
     session_id ||= @session_id if @session_id
-    url = "/eval?command=#{CGI.escape arg}"
+    @last_command = arg
+    url = "/eval?command=#{CGI.escape @last_command}"
     url << "&session_id=#{session_id}" if session_id
     get url
     assert last_response.ok?
+  end
+
+  def last_command
+    @last_command
   end
 
   def response_was matcher
@@ -35,7 +40,7 @@ class TestTryRedis < MiniTest::Test
 
   def body_was key, matcher
     json = JSON.parse last_response.body
-    assert_match matcher, json[key.to_s]
+    assert_match matcher, json[key.to_s], "Last Command: '#{last_command}', Key: '#{key}', Body: #{json.inspect}"
   end
 
   def command_with_body comm, args={}
@@ -43,11 +48,6 @@ class TestTryRedis < MiniTest::Test
 
     args.each do |k,v|
       body_was k, v
-    end
-
-    if args[:error].nil?
-      json = JSON.parse last_response.body
-      assert_equal nil, json['error']
     end
   end
   # Helper commands end
@@ -70,8 +70,8 @@ class TestTryRedis < MiniTest::Test
   end
 
   def test_eval_returns_argument_error
-    command "keys"
-    body_was :error, "ERR wrong number of arguments for 'keys' command"
+    command "set"
+    body_was :error, "ERR wrong number of arguments for 'set' command"
   end
 
   def test_eval_returns_error_for_unknown
@@ -142,35 +142,35 @@ class TestTryRedis < MiniTest::Test
     exp = "bar"
     command "set #{key} #{val}", session
     body_was :response, "OK"
-    assert_equal exp, @r.get("#{session}:#{key}")
+    assert_equal exp, @r.call(:get, "#{session}:#{key}")
 
     key = "foo"
     val = "next-val"
     exp = "bar"
     command "set #{key} #{val} nx", session
     body_was :response, "(nil)"
-    assert_equal exp, @r.get("#{session}:#{key}")
+    assert_equal exp, @r.call(:get, "#{session}:#{key}")
 
     key = "foo"
     val = "next-val"
     exp = "next-val"
     command "set #{key} #{val} xx", session
     body_was :response, "OK"
-    assert_equal exp, @r.get("#{session}:#{key}")
+    assert_equal exp, @r.call(:get, "#{session}:#{key}")
 
     key = "non-exist"
     val = "bar"
     exp = "bar"
     command "set #{key} #{val} nx", session
     body_was :response, "OK"
-    assert_equal exp, @r.get("#{session}:#{key}")
+    assert_equal exp, @r.call(:get, "#{session}:#{key}")
 
     key = "non-exist2"
     val = "bar"
     exp = nil
     command "set #{key} #{val} xx", session
     body_was :response, "(nil)"
-    assert_equal exp, @r.get("#{session}:#{key}")
+    assert_equal exp, @r.call(:get, "#{session}:#{key}")
   end
 
   def test_ping
@@ -182,7 +182,7 @@ class TestTryRedis < MiniTest::Test
 
       session = "scan"
 
-      @r.set "#{session}:foo", "bar"
+      @r.call :set, "#{session}:foo", "bar"
       command "scan 0", session
       body_was :response, /1\) \"0\"\n2\) 1\) \"scan:foo\"/
     end
@@ -193,7 +193,7 @@ class TestTryRedis < MiniTest::Test
 
       session = "sscan"
 
-      @r.sadd "#{session}:foo", ["bar", "baz", "bam"]
+      @r.call :sadd, "#{session}:foo", "bar", "baz", "bam"
       command "sscan foo 0", session
       body_was :response, /1\) \"0\"\n2\) 1\) /
     end
@@ -204,7 +204,7 @@ class TestTryRedis < MiniTest::Test
 
       session = "zscan"
 
-      @r.zadd "#{session}:foo", [0, "bar", 1, "baz", 2, "bam"]
+      @r.call :zadd, "#{session}:foo", 0, "bar", 1, "baz", 2, "bam"
       command "zscan foo 0", session
       body_was :response, /1\) \"0\"\n2\) 1\) \"/
     end
@@ -215,7 +215,7 @@ class TestTryRedis < MiniTest::Test
 
       session = "hscan"
 
-      @r.hmset "#{session}:foo", ["key0", "val0", "key1", "val1", "key2", "val2"]
+      @r.call :hmset, "#{session}:foo", "key0", "val0", "key1", "val1", "key2", "val2"
       command "hscan foo 0", session
       body_was :response, /1\) \"0\"\n2\) 1\) \"key/
     end
@@ -225,7 +225,7 @@ class TestTryRedis < MiniTest::Test
     session = "valid-session-id"
     command "set bug issue-25", session
 
-    assert_equal "issue-25", @r.get("#{session}:bug")
+    assert_equal "issue-25", @r.call(:get, "#{session}:bug")
   end
 
   def test_command_returns_new_session
@@ -245,7 +245,7 @@ class TestTryRedis < MiniTest::Test
   def test_bitpos_with_session_id
     target_version "2.9.11" do
       session_id = "id"
-      @r.set "#{session_id}:foo", "a"
+      @r.call :set, "#{session_id}:foo", "a"
 
       command "bitpos foo 1", session_id
 
@@ -265,17 +265,17 @@ class TestTryRedis < MiniTest::Test
     target_version "2.9.11" do
       set_session "bitpos"
 
-      @r.set "bitpos:foo", "\xff\xf0\x00"
+      @r.call :set, "bitpos:foo", "\xff\xf0\x00"
       command_with_body "bitpos foo 0", response: "(integer) 12"
 
-      @r.set "bitpos:foo", "\x00\x0f\x00"
+      @r.call :set, "bitpos:foo", "\x00\x0f\x00"
       command_with_body "bitpos foo 1", response: "(integer) 12"
     end
   end
 
   def test_bitpos_with_positions
     target_version "2.9.11" do
-      @r.set "bitpos:foo", "\xff\xff\xff"
+      @r.call :set, "bitpos:foo", "\xff\xff\xff"
 
       set_session "bitpos"
       command_with_body "bitpos foo 0", response: "(integer) 24"
@@ -286,7 +286,7 @@ class TestTryRedis < MiniTest::Test
 
   def test_bitpos_one_intervals
     target_version "2.9.11" do
-      @r.set "bitpos:foo", "\x00\xff\x00"
+      @r.call :set, "bitpos:foo", "\x00\xff\x00"
 
       set_session "bitpos"
       command_with_body "bitpos foo 1 0 -1", response: "(integer) 8"
@@ -311,7 +311,7 @@ class TestTryRedis < MiniTest::Test
 
   def test_strlen_works
     set_session "strlen"
-    @r.set "strlen:foo", "bar"
+    @r.call :set, "strlen:foo", "bar"
     command_with_body "strlen foo", response: "(integer) 3"
   end
 
@@ -332,7 +332,7 @@ class TestTryRedis < MiniTest::Test
       set_session "hll"
 
       command_with_body "pfadd hll foo bar baz", response: "(integer) 1"
-      assert_equal @r.pfcount("hll:hll"), 3
+      assert_equal @r.call(:pfcount, "hll:hll"), 3
     end
   end
 
@@ -342,14 +342,13 @@ class TestTryRedis < MiniTest::Test
 
       command_with_body "pfadd hll foo bar baz", response: "(integer) 1"
       command_with_body "pfcount hll", response: "(integer) 3"
-      assert_equal @r.pfcount("hll:hll"), 3
+      assert_equal @r.call(:pfcount, "hll:hll"), 3
     end
   end
 
   def test_pfmerge_wrong_argument_count
     target_version "2.9.11" do
       command_with_body "pfmerge", error: /ERR wrong number of arguments for 'pfmerge' command/
-      command_with_body "pfmerge foo", error: /ERR wrong number of arguments for 'pfmerge' command/
     end
   end
 
@@ -361,9 +360,9 @@ class TestTryRedis < MiniTest::Test
       command_with_body "pfadd hll2 a b c foo",     response: "(integer) 1"
       command_with_body "pfmerge hll3 hll1 hll2",   response: "OK"
       command_with_body "pfcount hll3",             response: "(integer) 6"
-      assert_equal 4, @r.pfcount("hll:hll1")
-      assert_equal 4, @r.pfcount("hll:hll2")
-      assert_equal 6, @r.pfcount("hll:hll3")
+      assert_equal 4, @r.call(:pfcount, "hll:hll1")
+      assert_equal 4, @r.call(:pfcount, "hll:hll2")
+      assert_equal 6, @r.call(:pfcount, "hll:hll3")
     end
   end
 end

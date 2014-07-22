@@ -110,62 +110,57 @@ class TryRedis < Sinatra::Base
     end
 
     # Connect to the Redis server.
-    raw_redis, redis = redis_connect
+    redis = redis_connect
 
-    if (result = bypass(redis, raw_redis, argv))
+    if (result = bypass(redis, argv))
       result
     else
       # Send the command to Redis.
-      result = redis.public_send(*argv)
+      result = redis.call(*argv)
 
-      if INTEGER_COMMANDS.include?(argv[0])
-        result = "(integer) #{result}"
-      else
-        if FLATTEN_COMMANDS.include?(argv[0])
-          result = result.flatten
-        end
-
-        result = to_redis_output result, argv[0], argv[1]
+      # Redic returns a RuntimeError, but doesn't raise it.
+      if result.kind_of? Exception
+        raise result
       end
 
-      result
+      to_redis_output result, argv[0]
     end
   ensure
     begin
       # Disconnect from the server.
-      redis.quit if redis
+      redis.call(:quit) if redis
     rescue Exception => e
       STDERR.puts e.message
       e.backtrace.each {|bt| STDERR.puts bt}
     end
   end
 
-  def bypass(redis, raw_redis, argv)
+  def bypass(redis, argv)
     queue = "transactions-#{namespace}"
 
     if argv.first == "multi"
-      raw_redis.del queue
-      raw_redis.rpush queue, 'multi'
+      redis.call :del, queue
+      redis.call :rpush, queue, 'multi'
       return "OK"
-    elsif raw_redis.llen(queue).to_i >= 1
+    elsif redis.call(:llen, queue).to_i >= 1
       case argv.first
       when 'discard'
-        raw_redis.del(queue)
+        redis.call :del, queue
         'OK'
       when 'exec'
         # First will always be multi
-        commands = raw_redis.lrange(queue, 1, -1)
-        raw_redis.del(queue)
+        commands = redis.call(:lrange, queue, 1, -1)
+        redis.call(:del, queue)
 
-        redis.multi
+        redis.call :multi
         commands.map do |c|
           cmd = JSON.parse(c)
-          redis.public_send(*cmd)
+          redis.call *cmd
         end
 
-        to_redis_output redis.exec, 'exec'
+        to_redis_output redis.call('exec'), 'exec'
       else
-        raw_redis.rpush queue, argv.to_json
+        redis.call(:rpush, queue, argv.to_json)
         'QUEUED'
       end
     elsif %w(discard exec).include? argv.first
@@ -243,14 +238,6 @@ class TryRedis < Sinatra::Base
                Logger.new(File.join(File.dirname(__FILE__),'log','redis.log'))
              end
 
-    raw_redis = Redis.new(
-      :host => REDIS_HOST,
-      :port => REDIS_PORT,
-      :logger => logger
-    )
-
-    redis = Redis::Namespace.new namespace, redis: raw_redis
-
-    [raw_redis, redis]
+    redis = Redic.new("redis://#{REDIS_HOST}:#{REDIS_PORT}")
   end
 end

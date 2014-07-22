@@ -36,7 +36,10 @@ class RedisVersion
 end
 
 def redis_version
-  RedisVersion.new Redis.new.info['redis_version']
+  port = ENV['REDIS_PORT'] || 6379
+  host = ENV['REDIS_HOST'] || 'localhost'
+  r = Redic.new "redis://#{host}:#{port}"
+  RedisVersion.new r.call(:info).split("\r\n").find{|e|e=~/redis_version/}.split(":").last
 end
 
 def target_version(target)
