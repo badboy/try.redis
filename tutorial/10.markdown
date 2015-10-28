@@ -20,12 +20,12 @@ To get back the saved data use [HGETALL](#help):
 You can also set multiple fields at once:
 
 <pre></code>
-    <a href="#run">HMSET user:1001 name "Mary Jones" password "hidden" email "mjones@example.com"</a>
+    <a href="#run">HMSET user:1000 name "Mary Jones" password "hidden" email "mjones@example.com"</a>
 </code></pre>
 
 If you only need a single field value that is possible as well:
 
 <pre></code>
-    <a href="#run">HGET user:1001 name</a> => "Mary Jones"
+    <a href="#run">HGET user:1000 name</a> => "Mary Jones"
 </code></pre>
 
