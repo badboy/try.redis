@@ -8,7 +8,7 @@ If member already exists in the sorted set adds the increment to its score and
 updates the position of the element in the sorted set accordingly. If member
 does not already exist in the sorted set it is added with increment as score
 (that is, like if the previous score was virtually zero). If key does not exist
-a new sorted set with the specified member as sole member is crated. If the key
+a new sorted set with the specified member as sole member is created. If the key
 exists but does not hold a sorted set value an error is returned.
 
 The score value can be the string representation of a double precision floating
